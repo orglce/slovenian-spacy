@@ -1,0 +1,367 @@
+title: "Standard and non-standard Slovenian Spacy pipelines"
+description: "Spacy project for building standard and non-standard Slovenian pipelines based on the ssj500k and JANES datasets"
+spacy_version: ">=3.2.0,<4.0.0"
+
+vars:
+  lang: "sl"
+  vector_size_small: 50000
+  vector_size_large: 300000
+  treebank_standard: "UD_Slovenian-SSJ"
+  treebank_nonstandard: "Janes-Tag"
+  train_name_nonstandard: "sl_ssj-ud-train"
+  dev_name_nonstandard: "sl_ssj-ud-dev"
+  test_name_nonstandard: "sl_ssj-ud-test"
+  train_name_standard: "sl_ssj-ud-train"
+  dev_name_standard: "sl_ssj-ud-dev"
+  test_name_standard: "sl_ssj-ud-test"
+  vectors_name: "vectors-without"
+  floret_name: "vectors-without"
+  gpu_id: -1
+
+directories: ["assets", "corpus", "training", "metrics", "training", "vectors"]
+
+assets:
+  - dest: "assets/${vars.treebank_standard}"
+    git:
+      repo: "https://github.com/UniversalDependencies/${vars.treebank_standard}"
+      branch: "master"
+      path: ""
+
+  - dest: "assets/${vars.treebank_nonstandard}/Janes-Tag.conllu.zip"
+    url: "https://www.clarin.si/repository/xmlui/bitstream/handle/11356/1238/Janes-Tag.conllu.zip"
+
+  - dest: "assets/${vars.treebank_nonstandard}/Janes-Tag.TEI.zip"
+    url: "https://www.clarin.si/repository/xmlui/bitstream/handle/11356/1238/Janes-Tag.TEI.zip"
+
+workflows:
+  convert-all:
+    - convert-ssj
+    - convert-janes
+
+  init-all-vectors:
+    - init-vectors-small
+    - init-vectors-large
+    - init-floret-vectors
+
+  train-standard-no-vectors:
+    - convert-ssj
+    - train-standard-with-no-vectors
+    - evaluate-standard-with-no-vectors
+
+  train-standard-sloberta:
+    - convert-ssj
+    - train-standard-with-sloberta
+    - evaluate-standard-with-sloberta
+
+  train-nonstandard-no-vectors:
+    - convert-janes
+    - train-nonstandard-with-no-vectors
+    - evaluate-nonstandard-with-no-vectors
+
+  train-nonstandard-sloberta:
+    - convert-janes
+    - train-nonstandard-with-sloberta
+    - evaluate-nonstandard-with-sloberta
+
+  train-all:
+    - convert-ssj
+    - convert-janes
+    - train-standard-with-no-vectors
+    - evaluate-standard-with-no-vectors
+    - train-standard-with-sloberta
+    - evaluate-standard-with-sloberta
+    - train-nonstandard-with-no-vectors
+    - evaluate-nonstandard-with-no-vectors
+    - train-nonstandard-with-sloberta
+    - evaluate-nonstandard-with-sloberta
+
+commands:
+
+  ####### CONVERT CORPUSES TO SPACY FORMAT ##########
+
+  - name: "convert-ssj"
+    help: "Convert SSJ NER tags to Spacy compatible NER tags"
+    script:
+      - "mkdir -p corpus/${vars.treebank_standard}"
+      - "python ./scripts/convert_ssj_ner.py assets/${vars.treebank_standard}"
+      - "python -m spacy convert assets/${vars.treebank_standard}/${vars.train_name_standard}-ner-converted.conllu corpus/${vars.treebank_standard}/ --n-sents 10"
+      - "mv corpus/${vars.treebank_standard}/${vars.train_name_standard}-ner-converted.spacy corpus/${vars.treebank_standard}/train.spacy"
+      - "python -m spacy convert assets/${vars.treebank_standard}/${vars.dev_name_standard}-ner-converted.conllu corpus/${vars.treebank_standard}/ --n-sents 10"
+      - "mv corpus/${vars.treebank_standard}/${vars.dev_name_standard}-ner-converted.spacy corpus/${vars.treebank_standard}/dev.spacy"
+      - "python -m spacy convert assets/${vars.treebank_standard}/${vars.test_name_standard}-ner-converted.conllu corpus/${vars.treebank_standard}/ --n-sents 10"
+      - "mv corpus/${vars.treebank_standard}/${vars.test_name_standard}-ner-converted.spacy corpus/${vars.treebank_standard}/test.spacy"
+    outputs:
+      - "corpus/${vars.treebank_standard}/train.spacy"
+      - "corpus/${vars.treebank_standard}/dev.spacy"
+      - "corpus/${vars.treebank_standard}/test.spacy"
+
+  - name: "convert-janes"
+    help: "Convert Janes NER tags and split to train-dev-test"
+    script:
+      - "mkdir -p corpus/${vars.treebank_nonstandard}"
+      - "python ./scripts/janes_add_ner.py"
+      - "python ./scripts/split_conllu.py"
+      - "python -m spacy convert assets/${vars.treebank_nonstandard}/sl_janes-train.conllu corpus/${vars.treebank_nonstandard}/ --n-sents 10"
+      - "mv corpus/${vars.treebank_nonstandard}/sl_janes-train.spacy corpus/${vars.treebank_nonstandard}/train.spacy"
+      - "python -m spacy convert assets/${vars.treebank_nonstandard}/sl_janes-dev.conllu corpus/${vars.treebank_nonstandard}/ --n-sents 10"
+      - "mv corpus/${vars.treebank_nonstandard}/sl_janes-dev.spacy corpus/${vars.treebank_nonstandard}/dev.spacy"
+      - "python -m spacy convert assets/${vars.treebank_nonstandard}/sl_janes-test.conllu corpus/${vars.treebank_nonstandard}/ --n-sents 10"
+      - "mv corpus/${vars.treebank_nonstandard}/sl_janes-test.spacy corpus/${vars.treebank_nonstandard}/test.spacy"
+    outputs:
+      - "corpus/${vars.treebank_nonstandard}/train.spacy"
+      - "corpus/${vars.treebank_nonstandard}/dev.spacy"
+      - "corpus/${vars.treebank_nonstandard}/test.spacy"
+
+  ####### INITALIZE VECTORS ##########
+
+  - name: "init-vectors-small"
+    help: "Create a small standard vectors model"
+    script:
+      - "python -m spacy init vectors ${vars.lang} vectors/${vars.vectors_name}.vec vectors/${vars.vectors_name}-vectors-small --prune ${vars.vector_size_small}"
+    deps:
+      - "vectors/${vars.vectors_name}.vec"
+    outputs:
+      - "vectors/${vars.vectors_name}-vectors-small"
+
+  - name: "init-vectors-large"
+    help: "Create a large standard vectors model"
+    script:
+      - "python -m spacy init vectors ${vars.lang} vectors/${vars.vectors_name}.vec vectors/${vars.vectors_name}-vectors-large --prune ${vars.vector_size_large}"
+    deps:
+      - "vectors/${vars.vectors_name}.vec"
+    outputs:
+      - "vectors/${vars.vectors_name}-vectors-large"
+
+  - name: "init-floret-vectors"
+    help: "Create a floret vectors model"
+    script:
+      - "python -m spacy init vectors ${vars.lang} vectors/${vars.floret_name}.floret vectors/${vars.floret_name}-vectors-floret --mode floret"
+    deps:
+      - "vectors/${vars.floret_name}.floret"
+    outputs:
+      - "vectors/${vars.floret_name}-vectors-floret"
+
+  ####### STANDARD MODEL ##########
+
+  - name: "train-standard-with-no-vectors"
+    help: "Train the standard model without vectors"
+    script:
+      - "python -m spacy train configs/config-standard.cfg --output training/${vars.treebank_standard}-standard-with-no-vectors/ --paths.train corpus/${vars.treebank_standard}/train.spacy --paths.dev corpus/${vars.treebank_standard}/dev.spacy --gpu-id ${vars.gpu_id}"
+    deps:
+      - "configs/config-standard.cfg"
+      - "corpus/${vars.treebank_standard}/train.spacy"
+      - "corpus/${vars.treebank_standard}/dev.spacy"
+    outputs:
+      - "training/${vars.treebank_standard}-standard-with-no-vectors/model-best"
+
+  - name: "train-standard-with-small-vectors"
+    help: "Train the standard model with small amount of vectors"
+    script:
+      - "python -m spacy train configs/config-standard.cfg --output training/${vars.treebank_standard}-standard-with-small-vectors/ --paths.train corpus/${vars.treebank_standard}/train.spacy --paths.dev corpus/${vars.treebank_standard}/dev.spacy --gpu-id ${vars.gpu_id} --initialize.vectors vectors/${vars.vectors_name}-vectors-small"
+    deps:
+      - "configs/config-standard.cfg"
+      - "corpus/${vars.treebank_standard}/train.spacy"
+      - "corpus/${vars.treebank_standard}/dev.spacy"
+      - "vectors/${vars.vectors_name}-vectors-small"
+    outputs:
+      - "training/${vars.treebank_standard}-standard-with-small-vectors/model-best"
+
+  - name: "train-standard-with-large-vectors"
+    help: "Train the standard model with large amount of vectors"
+    script:
+      - "python -m spacy train configs/config-standard.cfg --output training/${vars.treebank_standard}-standard-with-large-vectors/ --paths.train corpus/${vars.treebank_standard}/train.spacy --paths.dev corpus/${vars.treebank_standard}/dev.spacy --gpu-id ${vars.gpu_id} --initialize.vectors vectors/${vars.vectors_name}-vectors-large"
+    deps:
+      - "configs/config-standard.cfg"
+      - "corpus/${vars.treebank_standard}/train.spacy"
+      - "corpus/${vars.treebank_standard}/dev.spacy"
+      - "vectors/${vars.vectors_name}-vectors-large"
+    outputs:
+      - "training/${vars.treebank_standard}-standard-with-large-vectors/model-best"
+
+  - name: "train-standard-with-floret-vectors"
+    help: "Train the standard model with floret vectors"
+    script:
+      - "python -m spacy train configs/config-standard.cfg --output training/${vars.treebank_standard}-standard-with-floret-vectors/ --paths.train corpus/${vars.treebank_standard}/train.spacy --paths.dev corpus/${vars.treebank_standard}/dev.spacy --gpu-id ${vars.gpu_id} --initialize.vectors vectors/${vars.floret_name}-vectors-floret"
+    deps:
+      - "configs/config-standard.cfg"
+      - "corpus/${vars.treebank_standard}/train.spacy"
+      - "corpus/${vars.treebank_standard}/dev.spacy"
+      - "vectors/${vars.floret_name}-vectors-floret"
+    outputs:
+      - "training/${vars.treebank_standard}-standard-with-floret-vectors/model-best"
+
+  - name: "train-standard-with-sloberta"
+    help: "Train the standard model with SloBERTa"
+    script:
+      - "python -m spacy train configs/config-standard-sloberta.cfg --output training/${vars.treebank_standard}-standard-with-sloberta/ --paths.train corpus/${vars.treebank_standard}/train.spacy --paths.dev corpus/${vars.treebank_standard}/dev.spacy --gpu-id ${vars.gpu_id}"
+    deps:
+      - "configs/config-standard-sloberta.cfg"
+      - "corpus/${vars.treebank_standard}/train.spacy"
+      - "corpus/${vars.treebank_standard}/dev.spacy"
+    outputs:
+      - "training/${vars.treebank_standard}-standard-with-sloberta/model-best"
+
+  ####### NONSTANDARD MODEL ##########
+
+  - name: "train-nonstandard-with-no-vectors"
+    help: "Train the nonstandard model without vectors"
+    script:
+      - "python -m spacy train configs/config-nonstandard.cfg --output training/${vars.treebank_nonstandard}-nonstandard-with-no-vectors/ --paths.train corpus/${vars.treebank_nonstandard}/train.spacy --paths.dev corpus/${vars.treebank_nonstandard}/dev.spacy --gpu-id ${vars.gpu_id}"
+    deps:
+      - "configs/config-nonstandard.cfg"
+      - "corpus/${vars.treebank_nonstandard}/train.spacy"
+      - "corpus/${vars.treebank_nonstandard}/dev.spacy"
+    outputs:
+      - "training/${vars.treebank_nonstandard}-nonstandard-with-no-vectors/model-best"
+
+  - name: "train-nonstandard-with-small-vectors"
+    help: "Train the nonstandard model with small amount of vectors"
+    script:
+      - "python -m spacy train configs/config-nonstandard.cfg --output training/${vars.treebank_nonstandard}-nonstandard-with-small-vectors/ --paths.train corpus/${vars.treebank_nonstandard}/train.spacy --paths.dev corpus/${vars.treebank_nonstandard}/dev.spacy --gpu-id ${vars.gpu_id} --initialize.vectors vectors/${vars.vectors_name}-vectors-small"
+    deps:
+      - "configs/config-nonstandard.cfg"
+      - "corpus/${vars.treebank_nonstandard}/train.spacy"
+      - "corpus/${vars.treebank_nonstandard}/dev.spacy"
+      - "vectors/${vars.vectors_name}-vectors-small"
+    outputs:
+      - "training/${vars.treebank_nonstandard}-nonstandard-with-small-vectors/model-best"
+
+  - name: "train-nonstandard-with-large-vectors"
+    help: "Train the nonstandard model with large amount of vectors"
+    script:
+      - "python -m spacy train configs/config-nonstandard.cfg --output training/${vars.treebank_nonstandard}-nonstandard-with-large-vectors/ --paths.train corpus/${vars.treebank_nonstandard}/train.spacy --paths.dev corpus/${vars.treebank_nonstandard}/dev.spacy --gpu-id ${vars.gpu_id} --initialize.vectors vectors/${vars.vectors_name}-vectors-large"
+    deps:
+      - "configs/config-nonstandard.cfg"
+      - "corpus/${vars.treebank_nonstandard}/train.spacy"
+      - "corpus/${vars.treebank_nonstandard}/dev.spacy"
+      - "vectors/${vars.vectors_name}-vectors-large"
+    outputs:
+      - "training/${vars.treebank_nonstandard}-nonstandard-with-large-vectors/model-best"
+
+  - name: "train-nonstandard-with-floret-vectors"
+    help: "Train the nonstandard model with floret vectors"
+    script:
+      - "python -m spacy train configs/config-nonstandard.cfg --output training/${vars.treebank_nonstandard}-nonstandard-with-floret-vectors/ --paths.train corpus/${vars.treebank_nonstandard}/train.spacy --paths.dev corpus/${vars.treebank_nonstandard}/dev.spacy --gpu-id ${vars.gpu_id} --initialize.vectors vectors/${vars.floret_name}-vectors-floret"
+    deps:
+      - "configs/config-nonstandard.cfg"
+      - "corpus/${vars.treebank_nonstandard}/train.spacy"
+      - "corpus/${vars.treebank_nonstandard}/dev.spacy"
+      - "vectors/${vars.floret_name}-vectors-floret"
+    outputs:
+      - "training/${vars.treebank_nonstandard}-nonstandard-with-floret-vectors/model-best"
+
+  - name: "train-nonstandard-with-sloberta"
+    help: "Train the nonstandard model with SloBERTa"
+    script:
+      - "python -m spacy train configs/config-nonstandard-sloberta.cfg --output training/${vars.treebank_nonstandard}-nonstandard-with-sloberta/ --paths.train corpus/${vars.treebank_nonstandard}/train.spacy --paths.dev corpus/${vars.treebank_nonstandard}/dev.spacy --gpu-id ${vars.gpu_id}"
+    deps:
+      - "configs/config-nonstandard-sloberta.cfg"
+      - "corpus/${vars.treebank_nonstandard}/train.spacy"
+      - "corpus/${vars.treebank_nonstandard}/dev.spacy"
+    outputs:
+      - "training/${vars.treebank_nonstandard}-nonstandard-with-sloberta/model-best"
+
+  ####### EVALUATE STANDARD ##########
+
+  - name: "evaluate-standard-with-no-vectors"
+    help: "Evaluate the models and export metrics"
+    script:
+      - "mkdir -p metrics/${vars.treebank_standard}-standard-with-no-vectors"
+      - "python -m spacy evaluate training/${vars.treebank_standard}-standard-with-no-vectors/model-best corpus/${vars.treebank_standard}/test.spacy --output metrics/${vars.treebank_standard}-standard-with-no-vectors/metrics.json"
+    deps:
+      - "corpus/${vars.treebank_standard}/test.spacy"
+    outputs:
+      - "metrics/${vars.treebank_standard}-standard-with-no-vectors/metrics.json"
+
+  - name: "evaluate-standard-with-small-vectors"
+    help: "Evaluate the models and export metrics"
+    script:
+      - "mkdir -p metrics/${vars.treebank_standard}-standard-with-small-vectors"
+      - "python -m spacy evaluate training/${vars.treebank_standard}-standard-with-small-vectors/model-best corpus/${vars.treebank_standard}/test.spacy --output metrics/${vars.treebank_standard}-standard-with-small-vectors/metrics.json"
+    deps:
+      - "corpus/${vars.treebank_standard}/test.spacy"
+    outputs:
+      - "metrics/${vars.treebank_standard}-standard-with-small-vectors/metrics.json"
+
+  - name: "evaluate-standard-with-large-vectors"
+    help: "Evaluate the models and export metrics"
+    script:
+      - "mkdir -p metrics/${vars.treebank_standard}-standard-with-large-vectors"
+      - "python -m spacy evaluate training/${vars.treebank_standard}-standard-with-large-vectors/model-best corpus/${vars.treebank_standard}/test.spacy --output metrics/${vars.treebank_standard}-standard-with-large-vectors/metrics.json"
+    deps:
+      - "corpus/${vars.treebank_standard}/test.spacy"
+    outputs:
+      - "metrics/${vars.treebank_standard}-standard-with-large-vectors/metrics.json"
+
+  - name: "evaluate-standard-with-floret-vectors"
+    help: "Evaluate the models and export metrics"
+    script:
+      - "mkdir -p metrics/${vars.treebank_standard}-standard-with-floret-vectors"
+      - "python -m spacy evaluate training/${vars.treebank_standard}-standard-with-floret-vectors/model-best corpus/${vars.treebank_standard}/test.spacy --output metrics/${vars.treebank_standard}-standard-with-floret-vectors/metrics.json"
+    deps:
+      - "corpus/${vars.treebank_standard}/test.spacy"
+    outputs:
+      - "metrics/${vars.treebank_standard}-standard-with-floret-vectors/metrics.json"
+
+  - name: "evaluate-standard-with-sloberta"
+    help: "Evaluate the models and export metrics"
+    script:
+      - "mkdir -p metrics/${vars.treebank_standard}-standard-with-sloberta"
+      - "python -m spacy evaluate training/${vars.treebank_standard}-standard-with-sloberta/model-best corpus/${vars.treebank_standard}/test.spacy --output metrics/${vars.treebank_standard}-standard-with-sloberta/metrics.json"
+    deps:
+      - "corpus/${vars.treebank_standard}/test.spacy"
+    outputs:
+      - "metrics/${vars.treebank_standard}-standard-with-sloberta/metrics.json"
+
+  ####### EVALUATE NONSTANDARD ##########
+
+  - name: "evaluate-nonstandard-with-no-vectors"
+    help: "Evaluate the models and export metrics"
+    script:
+      - "mkdir -p metrics/${vars.treebank_nonstandard}-nonstandard-with-no-vectors"
+      - "python -m spacy evaluate training/${vars.treebank_nonstandard}-nonstandard-with-no-vectors/model-best corpus/${vars.treebank_nonstandard}/test.spacy --output metrics/${vars.treebank_nonstandard}-nonstandard-with-no-vectors/metrics.json"
+    deps:
+      - "corpus/${vars.treebank_nonstandard}/test.spacy"
+    outputs:
+      - "metrics/${vars.treebank_nonstandard}-nonstandard-with-no-vectors/metrics.json"
+
+  - name: "evaluate-nonstandard-with-small-vectors"
+    help: "Evaluate the models and export metrics"
+    script:
+      - "mkdir -p metrics/${vars.treebank_nonstandard}-nonstandard-with-small-vectors"
+      - "python -m spacy evaluate training/${vars.treebank_nonstandard}-nonstandard-with-small-vectors/model-best corpus/${vars.treebank_nonstandard}/test.spacy --output metrics/${vars.treebank_nonstandard}-nonstandard-with-small-vectors/metrics.json"
+    deps:
+      - "corpus/${vars.treebank_nonstandard}/test.spacy"
+    outputs:
+      - "metrics/${vars.treebank_nonstandard}-nonstandard-with-small-vectors/metrics.json"
+
+  - name: "evaluate-nonstandard-with-large-vectors"
+    help: "Evaluate the models and export metrics"
+    script:
+      - "mkdir -p metrics/${vars.treebank_nonstandard}-nonstandard-with-large-vectors"
+      - "python -m spacy evaluate training/${vars.treebank_nonstandard}-nonstandard-with-large-vectors/model-best corpus/${vars.treebank_nonstandard}/test.spacy --output metrics/${vars.treebank_nonstandard}-nonstandard-with-large-vectors/metrics.json"
+    deps:
+      - "corpus/${vars.treebank_nonstandard}/test.spacy"
+    outputs:
+      - "metrics/${vars.treebank_nonstandard}-nonstandard-with-large-vectors/metrics.json"
+
+  - name: "evaluate-nonstandard-with-floret-vectors"
+    help: "Evaluate the models and export metrics"
+    script:
+      - "mkdir -p metrics/${vars.treebank_nonstandard}-nonstandard-with-floret-vectors"
+      - "python -m spacy evaluate training/${vars.treebank_nonstandard}-nonstandard-with-floret-vectors/model-best corpus/${vars.treebank_nonstandard}/test.spacy --output metrics/${vars.treebank_nonstandard}-nonstandard-with-floret-vectors/metrics.json"
+    deps:
+      - "corpus/${vars.treebank_nonstandard}/test.spacy"
+    outputs:
+      - "metrics/${vars.treebank_nonstandard}-nonstandard-with-floret-vectors/metrics.json"
+
+  - name: "evaluate-nonstandard-with-sloberta"
+    help: "Evaluate the models and export metrics"
+    script:
+      - "mkdir -p metrics/${vars.treebank_nonstandard}-nonstandard-with-sloberta"
+      - "python -m spacy evaluate training/${vars.treebank_nonstandard}-nonstandard-with-sloberta/model-best corpus/${vars.treebank_nonstandard}/test.spacy --output metrics/${vars.treebank_nonstandard}-nonstandard-with-sloberta/metrics.json"
+    deps:
+      - "corpus/${vars.treebank_nonstandard}/test.spacy"
+    outputs:
+      - "metrics/${vars.treebank_nonstandard}-nonstandard-with-sloberta/metrics.json"
+
