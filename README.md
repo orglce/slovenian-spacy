@@ -4,7 +4,7 @@
 
 Train models for standard and non-standard Slovenian on the ssj500k and Janes corpuses. The project gives you the option to train standard Spacy pipelines and pipelines with the transformer. The Slovenian transfrormer model is [SloBERTa](https://huggingface.co/EMBEDDIA/sloberta), available at HuggingFace.
 
-The of training the models is described in _________.
+The of training of the models is described in this [Slovenian paper](https://repozitorij.uni-lj.si/Dokument.php?id=160420&lang=slv).
 
 ### Requirements
 
