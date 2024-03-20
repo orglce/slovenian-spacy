@@ -6,6 +6,8 @@ Train models for standard and non-standard Slovenian on the ssj500k and Janes co
 
 The of training of the models is described in this [Slovenian paper](https://repozitorij.uni-lj.si/Dokument.php?id=160420&lang=slv).
 
+*UPDATE* - Jul 7, 2023: SpaCy now offers [official models for Slovenian](https://spacy.io/models/sl)
+
 ### Requirements
 
 `pyconll` is needed for the conversion of the datasets.
